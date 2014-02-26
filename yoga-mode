@@ -1,0 +1,41 @@
+#!/bin/sh
+
+STATE_FILE=/tmp/yoga-mode.tmp
+
+# Try to determine display environment
+# NOTE: this won't work in a multi-user environment
+export XAUTHORITY=$(ls -1 /home/*/.Xauthority | head -1)
+export DISPLAY=":$(ls -1 /tmp/.X11-unix/ | sed -e 's/^X//g' | head -1)"
+
+
+normal_map() {
+    logger "$(basename $0): Mapping 133 to Super"
+    xmodmap -e 'keycode 133 = Super_L'
+    echo "normal" > $STATE_FILE
+}
+
+tablet_map() {
+    logger "$(basename $0): Mapping 133 to F20"
+    xmodmap -e 'keycode 133 = F20'
+    echo "tablet" > $STATE_FILE
+}
+
+toggle_map() {
+    echo "Toggling..."
+    [[ -r $STATE_FILE ]] && {
+        local state=$(cat $STATE_FILE)
+        [[ "$state" = "normal" ]] && tablet_map || normal_map
+    } || tablet_map
+}
+
+case "$1" in
+    tablet)
+        tablet_map
+        ;;
+    normal)
+        normal_map
+        ;;
+    *)
+        toggle_map
+        ;;
+esac
