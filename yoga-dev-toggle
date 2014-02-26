@@ -1,0 +1,119 @@
+#!/bin/sh
+
+TOUCHPAD_DEVICE="SynPS/2 Synaptics TouchPad"
+TRACKPOINT_DEVICE="TPPS/2 IBM TrackPoint"
+TOUCHSCREEN_DEVICE="ELAN Touchscreen"
+WACOM_DEVICE="Wacom ISDv4 EC Pen stylus"
+
+SLEEP_INTERVAL=.25
+
+# Try to determine display environment
+# NOTE: this won't work in a multi-user environment
+export XAUTHORITY=$(ls -1 /home/*/.Xauthority | head -1)
+export DISPLAY=":$(ls -1 /tmp/.X11-unix/ | sed -e 's/^X//g' | head -1)"
+
+stylus_proximity() {
+    local state=$(xinput query-state "$WACOM_DEVICE" | sed -n 's/.*Proximity=\(.*\)/\1/p')
+    [[ "$state" = "In" ]]
+}
+
+proximity_monitor() {
+    local status=$(stylus_proximity)
+    local touchscreen_disabled
+    while true; do
+        if stylus_proximity; then
+            if [[ -z "$touchscreen_disabled" ]]; then
+                disable_device "$TOUCHSCREEN_DEVICE"
+                touchscreen_disabled=1
+            fi
+        elif [[ -n "$touchscreen_disabled" ]]; then
+            enable_device "$TOUCHSCREEN_DEVICE"
+            touchscreen_disabled=''
+        fi
+        sleep $SLEEP_INTERVAL
+    done
+}
+
+log_status() {
+    local hstring
+    case "$1" in
+        "$TOUCHSCREEN_DEVICE")
+            hstring="Touchscreen"
+            ;;
+        "$TOUCHPAD_DEVICE")
+            hstring="Touchpad"
+            ;;
+        "$WACOM_DEVICE")
+            hstring="Wacom"
+            ;;
+        "$TRACKPOINT_DEVICE")
+            hstring="Trackpoint"
+            ;;
+    esac
+    case "$2" in
+        on)
+            ;&
+        off)
+            hstring="${hstring} $2"
+            ;;
+        *)
+            # Dead code?
+            device_status "$1" && hstring="${hstring} off" || hstring="${hstring} on"
+            ;;
+    esac
+    logger "$(basename $0): $hstring"
+}
+
+device_status() {
+    local state=$(xinput list-props "$1" | grep Enabled | awk '{ print $NF }')
+    [[ "$state" -eq 1 ]]
+}
+
+enable_device() {
+    log_status "$1" "on"
+    xinput enable "$1"
+}
+
+disable_device() {
+    log_status "$1" "off"
+    xinput disable "$1"
+}
+
+toggle_device() {
+    device_status "$1" && disable_device "$1" || enable_device "$1"
+}
+
+case "$1" in
+    touchpad|tpd|tp)
+        device="$TOUCHPAD_DEVICE"
+        ;;
+    trackpoint|trpt|tpt|trp)
+        device="$TRACKPOINT_DEVICE"
+        ;;
+    touchscreen|tsc|ts)
+        device="$TOUCHSCREEN_DEVICE"
+        ;;
+    wacom|w)
+        device="$WACOM_DEVICE"
+        ;;
+    proximity|prox|p)
+        proximity_monitor
+        ;;
+    debug|d)
+        device_status "$TOUCHSCREEN_DEVICE"
+        ;;
+esac
+
+[[ -n "$device" ]] && {
+    case "$2" in
+        off)
+            disable_device "$device"
+            ;;
+        on)
+            enable_device "$device"
+            ;;
+        *)
+            toggle_device "$device"
+            ;;
+    esac
+}
